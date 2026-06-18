@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapa de Calor - Leads y Cobertura WIN</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: Arial, sans-serif; overflow: hidden;
+    }
+
+    #mapa {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100vh; z-index: 1;
+    }
+
+    #panel {
+      position: fixed; top: 15px; left: 60px;
+      z-index: 99999; background: white;
+      padding: 12px 15px; border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+      font-size: 14px; min-width: 240px;
+    }
+
+    #panel strong { color: #111827; }
+
+    #contador      { display:none; font-weight:bold; color:#b91c1c; margin-top:6px; }
+    #contadorWin   { display:none; font-weight:bold; color:#00c853; margin-top:4px; }
+    #contadorSunat { display:none; font-weight:bold; color:#1d4ed8; margin-top:4px; }
+    #estado        { color:#555; margin-top:5px; font-size:12px; }
+    #progreso      { display:none; font-size:11px; color:#1d4ed8; margin-top:3px; font-weight:bold; }
+
+    .botones-capas { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
+
+    .btn-capa {
+      border:none; padding:7px 10px; border-radius:6px;
+      cursor:pointer; font-size:12px; font-weight:bold;
+      background:#e5e7eb; color:#374151;
+    }
+    .btn-capa.activo { color:white; }
+    #btnLeads.activo { background:#dc2626; }
+    #btnWin.activo   { background:#00e676; color:#002b12; box-shadow:0 0 10px rgba(0,255,102,0.95); }
+    #btnSunat.activo { background:#1d4ed8; }
+
+    .leyenda { margin-top:8px; font-size:12px; color:#333; line-height:1.9; }
+
+    .punto-rojo, .punto-verde, .punto-azul, .punto-yo {
+      display:inline-block; width:13px; height:13px;
+      border-radius:50%; margin-right:5px; vertical-align:middle;
+    }
+    .punto-rojo  { background:#dc2626; }
+    .punto-verde { background:#00e676; box-shadow:0 0 7px rgba(0,255,102,0.9); }
+    .punto-azul  { background:#1d4ed8; }
+    .punto-yo    { background:#f59e0b; box-shadow:0 0 7px rgba(245,158,11,0.9); }
+
+    /* ── Panel de mi ubicación ── */
+    #panel-ubicacion {
+      position: fixed; bottom: 20px; left: 60px;
+      z-index: 99999; background: white;
+      padding: 9px 13px; border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+      font-size: 12px; color: #374151;
+      display: none;
+      min-width: 220px;
+      border-left: 4px solid #f59e0b;
+    }
+    #panel-ubicacion .ub-titulo {
+      font-weight: bold; color: #92400e; margin-bottom: 4px;
+    }
+    #panel-ubicacion .ub-coords {
+      font-family: monospace; font-size: 11px; color: #555;
+    }
+    #panel-ubicacion .ub-precision {
+      font-size: 11px; color: #6b7280; margin-top: 2px;
+    }
+    #btn-centrar-yo {
+      margin-top: 6px; border: none; background: #f59e0b;
+      color: white; font-size: 11px; font-weight: bold;
+      padding: 4px 10px; border-radius: 5px; cursor: pointer;
+      width: 100%;
+    }
+    #btn-centrar-yo:hover { background: #d97706; }
+
+    /* ── Icono persona caminando ── */
+    .icono-persona-container {
+      position: relative;
+      width: 36px; height: 44px;
+    }
+    /* Pulso animado bajo la persona */
+    .pulso-yo {
+      position: absolute;
+      bottom: 2px; left: 50%;
+      transform: translateX(-50%);
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: rgba(245,158,11,0.25);
+      animation: pulso 1.6s ease-out infinite;
+    }
+    @keyframes pulso {
+      0%   { transform: translateX(-50%) scale(0.5); opacity: 0.9; }
+      100% { transform: translateX(-50%) scale(2.2); opacity: 0; }
+    }
+
+    /* ── TOOLTIP SUNAT (hover) ── */
+    .tooltip-sunat {
+      background: white;
+      border: 2px solid #1d4ed8;
+      border-radius: 8px;
+      padding: 8px 11px;
+      font-size: 12px;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.25);
+      min-width: 200px;
+      max-width: 290px;
+      pointer-events: none;
+    }
+    .tooltip-sunat h5 {
+      margin: 0 0 6px 0;
+      font-size: 13px;
+      color: #1e3a8a;
+      border-bottom: 1.5px solid #bfdbfe;
+      padding-bottom: 4px;
+    }
+    .tooltip-sunat table { width:100%; border-collapse:collapse; }
+    .tooltip-sunat td { padding:2px 4px; font-size:11px; vertical-align:top; }
+    .tooltip-sunat td:first-child { font-weight:bold; color:#1d4ed8; white-space:nowrap; padding-right:8px; }
+
+    .badge {
+      display:inline-block; padding:1px 7px;
+      border-radius:9px; font-weight:bold; font-size:10px;
+    }
+    .badge-activo   { background:#dcfce7; color:#166534; }
+    .badge-inactivo { background:#fee2e2; color:#991b1b; }
+    .badge-habido   { background:#dbeafe; color:#1e40af; }
+    .badge-nohabido { background:#fef3c7; color:#92400e; }
+    .badge-local1   { background:#e0f2fe; color:#0369a1; }
+    .badge-localmul { background:#ede9fe; color:#5b21b6; }
+    .badge-opor     { background:#fef9c3; color:#713f12; }
+  </style>
+</head>
+
+<body>
+
+  <div id="panel">
+    <div><strong>Mapa de calor</strong></div>
+
+    <div class="botones-capas">
+      <button id="btnLeads" class="btn-capa activo" onclick="toggleCapa('leads','btnLeads')">
+        🔥 Leads
+      </button>
+      <button id="btnWin" class="btn-capa activo" onclick="toggleCapa('win','btnWin')">
+        ✅ WIN
+      </button>
+      <button id="btnSunat" class="btn-capa activo" onclick="toggleSunat('btnSunat')">
+        🏢 SUNAT
+      </button>
+    </div>
+
+    <div id="contador"></div>
+    <div id="contadorWin"></div>
+    <div id="contadorSunat"></div>
+    <div id="estado">Cargando datos...</div>
+    <div id="progreso"></div>
+
+    <div class="leyenda">
+      <span class="punto-rojo"></span> Leads<br>
+      <span class="punto-verde"></span> Cobertura WIN<br>
+      <span class="punto-azul"></span> Empresa SUNAT<br>
+      <span class="punto-yo"></span> Mi ubicación
+    </div>
+  </div>
+
+  <!-- Panel info de mi ubicación -->
+  <div id="panel-ubicacion">
+    <div class="ub-titulo">📍 Mi ubicación en tiempo real</div>
+    <div class="ub-coords" id="ub-coords">Obteniendo...</div>
+    <div class="ub-precision" id="ub-precision"></div>
+    <button id="btn-centrar-yo" onclick="centrarEnMi()">🎯 Centrar mapa aquí</button>
+  </div>
+
+  <div id="mapa"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <script>
+    // ══════════════════════════════════════════
+    // MAPA BASE
+    // ══════════════════════════════════════════
+    var mapa = L.map('mapa').setView([-12.0464, -77.0428], 12);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(mapa);
+
+    // ══════════════════════════════════════════
+    // PANES
+    // ══════════════════════════════════════════
+    mapa.createPane('paneLeads');
+    mapa.getPane('paneLeads').style.zIndex = 450;
+
+    mapa.createPane('paneWin');
+    mapa.getPane('paneWin').style.zIndex = 500;
+
+    mapa.createPane('paneSunat');
+    mapa.getPane('paneSunat').style.zIndex = 550;
+
+    mapa.createPane('paneYo');
+    mapa.getPane('paneYo').style.zIndex = 650; // siempre encima de todo
+
+    // ══════════════════════════════════════════
+    // CONTROL DE CAPAS
+    // ══════════════════════════════════════════
+    var controlCapas = L.control.layers(null, null, { collapsed: false }).addTo(mapa);
+
+    // ══════════════════════════════════════════
+    // ALMACÉN DE CAPAS
+    // ══════════════════════════════════════════
+    var capasHeatmap = { leads: null, win: null };
+    var grupoSunat   = L.layerGroup();
+
+    // ══════════════════════════════════════════
+    // MI UBICACIÓN EN TIEMPO REAL
+    // ══════════════════════════════════════════
+    var miMarcador       = null;
+    var miCirculo        = null;
+    var miUltimaPosicion = null;
+    var watchId          = null;
+
+    // Ícono persona caminando (SVG inline)
+    function crearIconoPersona() {
+      return L.divIcon({
+        className: '',
+        html: '<div class="icono-persona-container">' +
+              '<div class="pulso-yo"></div>' +
+              '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5))">' +
+                // pin fondo
+                '<path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 26 18 26S36 31.5 36 18C36 8.06 27.94 0 18 0z" fill="#f59e0b"/>' +
+                '<path d="M18 1C8.6 1 1 8.6 1 18c0 12.9 17 24.8 17 24.8S35 30.9 35 18C35 8.6 27.4 1 18 1z" fill="#fbbf24"/>' +
+                // cabeza
+                '<circle cx="18" cy="10" r="4" fill="white"/>' +
+                // cuerpo
+                '<line x1="18" y1="14" x2="18" y2="22" stroke="white" stroke-width="2.5" stroke-linecap="round"/>' +
+                // brazos (posición caminando)
+                '<line x1="18" y1="16" x2="13" y2="20" stroke="white" stroke-width="2" stroke-linecap="round"/>' +
+                '<line x1="18" y1="16" x2="23" y2="19" stroke="white" stroke-width="2" stroke-linecap="round"/>' +
+                // piernas (posición caminando)
+                '<line x1="18" y1="22" x2="13" y2="28" stroke="white" stroke-width="2" stroke-linecap="round"/>' +
+                '<line x1="18" y1="22" x2="22" y2="28" stroke="white" stroke-width="2" stroke-linecap="round"/>' +
+              '</svg>' +
+              '</div>',
+        iconSize:    [36, 44],
+        iconAnchor:  [18, 44],
+        popupAnchor: [0, -44]
+      });
+    }
+
+    function actualizarMiUbicacion(posicion) {
+      var lat       = posicion.coords.latitude;
+      var lng       = posicion.coords.longitude;
+      var precision = Math.round(posicion.coords.accuracy);
+
+      miUltimaPosicion = [lat, lng];
+
+      // Actualizar o crear marcador
+      if (miMarcador) {
+        miMarcador.setLatLng([lat, lng]);
+      } else {
+        miMarcador = L.marker([lat, lng], {
+          icon:  crearIconoPersona(),
+          pane:  'paneYo',
+          zIndexOffset: 9999,
+          title: 'Mi ubicación'
+        })
+        .bindPopup('<b>📍 Estoy aquí</b><br><small>Precisión: ' + precision + ' m</small>')
+        .addTo(mapa);
+      }
+
+      // Círculo de precisión
+      if (miCirculo) {
+        miCirculo.setLatLng([lat, lng]);
+        miCirculo.setRadius(precision);
+      } else {
+        miCirculo = L.circle([lat, lng], {
+          radius:      precision,
+          color:       '#f59e0b',
+          fillColor:   '#fbbf24',
+          fillOpacity: 0.12,
+          weight:      1.5,
+          dashArray:   '4 4',
+          pane:        'paneYo'
+        }).addTo(mapa);
+      }
+
+      // Panel info
+      var panelUb = document.getElementById('panel-ubicacion');
+      panelUb.style.display = 'block';
+      document.getElementById('ub-coords').textContent =
+        'Lat: ' + lat.toFixed(6) + '\nLng: ' + lng.toFixed(6);
+      document.getElementById('ub-precision').textContent =
+        '⬤ Precisión GPS: ±' + precision + ' m';
+    }
+
+    function errorUbicacion(err) {
+      var mensajes = {
+        1: 'Permiso denegado. Activa la ubicación en tu navegador.',
+        2: 'Posición no disponible. Verifica tu GPS.',
+        3: 'Tiempo de espera agotado. Reintentando...'
+      };
+      document.getElementById('estado').textContent =
+        '⚠️ GPS: ' + (mensajes[err.code] || err.message);
+    }
+
+    function centrarEnMi() {
+      if (miUltimaPosicion) {
+        mapa.flyTo(miUltimaPosicion, 16, { animate: true, duration: 1.2 });
+      }
+    }
+
+    // Iniciar seguimiento al cargar la página
+    if ('geolocation' in navigator) {
+      // Primera lectura rápida
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          actualizarMiUbicacion(pos);
+        },
+        errorUbicacion,
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+
+      // Seguimiento continuo mientras te mueves
+      watchId = navigator.geolocation.watchPosition(
+        actualizarMiUbicacion,
+        errorUbicacion,
+        {
+          enableHighAccuracy: true,
+          maximumAge:         5000,   // usar caché hasta 5s
+          timeout:            15000
+        }
+      );
+    } else {
+      document.getElementById('estado').textContent = '⚠️ Tu navegador no soporta geolocalización.';
+    }
+
+    // ══════════════════════════════════════════
+    // TOGGLE HEATMAPS (Leads / WIN)
+    // ══════════════════════════════════════════
+    function toggleCapa(nombreCapa, idBoton) {
+      var capa  = capasHeatmap[nombreCapa];
+      var boton = document.getElementById(idBoton);
+      if (!capa) {
+        alert('La capa aún se está cargando o no se encontró el CSV.');
+        return;
+      }
+      if (mapa.hasLayer(capa)) {
+        mapa.removeLayer(capa);
+        boton.classList.remove('activo');
+      } else {
+        capa.addTo(mapa);
+        boton.classList.add('activo');
+      }
+    }
+
+    // ══════════════════════════════════════════
+    // TOGGLE SUNAT
+    // ══════════════════════════════════════════
+    function toggleSunat(idBoton) {
+      var boton = document.getElementById(idBoton);
+      if (mapa.hasLayer(grupoSunat)) {
+        mapa.removeLayer(grupoSunat);
+        boton.classList.remove('activo');
+      } else {
+        grupoSunat.addTo(mapa);
+        boton.classList.add('activo');
+      }
+    }
+
+    // ══════════════════════════════════════════
+    // CONVERTIR NÚMEROS
+    // ══════════════════════════════════════════
+    function convertirNumero(valor) {
+      if (valor === undefined || valor === null) return NaN;
+      var texto = String(valor)
+        .replace(/\uFEFF/g, '').replace(/"/g, '').trim();
+      if (texto === '' || texto === '-' || texto.toLowerCase() === 'null') return NaN;
+      return parseFloat(texto.replace(',', '.'));
+    }
+
+    // ══════════════════════════════════════════
+    // CARGAR HEATMAPS CSV
+    // ══════════════════════════════════════════
+    function cargarHeatmapCSV(config) {
+      Papa.parse(config.archivo, {
+        download: true, header: true,
+        skipEmptyLines: true, delimiter: "",
+        transformHeader: function(header) {
+          return String(header).replace(/\uFEFF/g, '').trim().toLowerCase();
+        },
+        complete: function(resultado) {
+          var puntos = [], errores = 0;
+          resultado.data.forEach(function(fila) {
+            var lat = convertirNumero(fila['latitud'] || fila['lat'] || fila['latitude']);
+            var lng = convertirNumero(fila['longitud'] || fila['lng'] || fila['lon'] || fila['long'] || fila['longitude']);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              puntos.push([lat, lng, config.intensidad || 0.8]);
+            } else {
+              errores++;
+            }
+          });
+
+          if (puntos.length === 0) {
+            document.getElementById('estado').textContent = 'Sin coordenadas válidas en ' + config.archivo;
+            return;
+          }
+
+          var capaHeatmap = L.heatLayer(puntos, {
+            pane:       config.pane,
+            radius:     config.radius     || 25,
+            blur:       config.blur       || 20,
+            maxZoom:    17,
+            minOpacity: config.minOpacity || 0.35,
+            max:        config.max        || 1.0,
+            gradient:   config.gradient
+          });
+
+          if (config.idCapa) capasHeatmap[config.idCapa] = capaHeatmap;
+          if (config.visibleInicio !== false) capaHeatmap.addTo(mapa);
+
+          controlCapas.addOverlay(
+            capaHeatmap,
+            config.nombreCapa + ' (' + puntos.length.toLocaleString() + ')'
+          );
+
+          if (config.contadorId) {
+            var cont = document.getElementById(config.contadorId);
+            if (cont) {
+              cont.style.display = 'block';
+              cont.textContent = puntos.length.toLocaleString() + ' ' + config.textoContador;
+            }
+          }
+
+          document.getElementById('estado').textContent = 'Datos cargados correctamente';
+
+          if (config.ajustarMapa && puntos.length > 0) {
+            var limites = L.latLngBounds(puntos.map(function(p) { return [p[0], p[1]]; }));
+            mapa.fitBounds(limites);
+          }
+        },
+        error: function(error) {
+          document.getElementById('estado').textContent = 'No se encontró el archivo: ' + config.archivo;
+          console.warn('No se encontró:', config.archivo, error);
+        }
+      });
+    }
+
+    // ══════════════════════════════════════════
+    // ICONO SUNAT — edificio SVG azul
+    // ══════════════════════════════════════════
+    var iconoSunat = L.divIcon({
+      className: '',
+      html: '<div style="filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));cursor:pointer;">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="21" viewBox="0 0 36 42">' +
+              '<path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 24 18 24S36 31.5 36 18C36 8.06 27.94 0 18 0z" fill="#1d4ed8"/>' +
+              '<rect x="8" y="10" width="20" height="14" rx="1" fill="white"/>' +
+              '<rect x="14" y="18" width="4" height="6" rx="0.5" fill="#1d4ed8"/>' +
+              '<rect x="9"  y="12" width="3" height="3" rx="0.3" fill="#bfdbfe"/>' +
+              '<rect x="14" y="12" width="3" height="3" rx="0.3" fill="#bfdbfe"/>' +
+              '<rect x="19" y="12" width="3" height="3" rx="0.3" fill="#bfdbfe"/>' +
+              '<rect x="24" y="12" width="3" height="3" rx="0.3" fill="#bfdbfe"/>' +
+              '<rect x="9"  y="16" width="3" height="3" rx="0.3" fill="#bfdbfe"/>' +
+              '<rect x="19" y="16" width="3" height="3" rx="0.3" fill="#bfdbfe"/>' +
+              '<rect x="24" y="16" width="3" height="3" rx="0.3" fill="#bfdbfe"/>' +
+              '<rect x="6" y="8" width="24" height="3" rx="0.5" fill="#1e40af"/>' +
+            '</svg></div>',
+      iconSize:    [18, 21],
+      iconAnchor:  [9, 21],
+      popupAnchor: [0, -22],
+      tooltipAnchor: [9, -21]
+    });
+
+    // ══════════════════════════════════════════
+    // BADGES SUNAT
+    // ══════════════════════════════════════════
+    function bEstado(v) {
+      var l = (v || '').toLowerCase();
+      if (l === 'activo')   return '<span class="badge badge-activo">✅ '   + v + '</span>';
+      if (l === 'inactivo') return '<span class="badge badge-inactivo">❌ ' + v + '</span>';
+      return v || '—';
+    }
+    function bCondicion(v) {
+      var l = (v || '').toLowerCase();
+      if (l.includes('no hab') || l.includes('no hal')) return '<span class="badge badge-nohabido">⚠️ ' + v + '</span>';
+      if (l.includes('habido'))                          return '<span class="badge badge-habido">📍 '  + v + '</span>';
+      return v || '—';
+    }
+    function bLocales(v) {
+      var n = parseInt(v, 10);
+      if (isNaN(n)) return v || '—';
+      return n === 1
+        ? '<span class="badge badge-local1">🏬 1 local</span>'
+        : '<span class="badge badge-localmul">🏢 ' + n + ' locales</span>';
+    }
+    function bOpor(v) {
+      return (v && v.trim() && v !== '—')
+        ? '<span class="badge badge-opor">⭐ ' + v + '</span>'
+        : '—';
+    }
+
+    var ETIQUETAS = {
+      ruc:            '🪪 RUC',
+      'razón_social': '🏷️ Razón Social',
+      razon_social:   '🏷️ Razón Social',
+      tipo_empresa:   '🏗️ Tipo Empresa',
+      estado:         '📊 Estado',
+      condicion:      '📌 Condición',
+      locales:        '🏬 Locales',
+      oportunidad:    '⭐ Oportunidad'
+    };
+    var ORDEN = ['ruc','razón_social','razon_social','tipo_empresa','estado','condicion','locales','oportunidad'];
+    var SKIP  = ['latitud','longitud','lat','lng','lon','long','latitude','longitude'];
+
+    function fichaHTML(f, campos) {
+      var nom = (f['razón_social'] || f['razon_social'] || f['ruc'] || 'Empresa').trim();
+      var filas = '', vistas = [];
+
+      ORDEN.forEach(function(col) {
+        if (campos.indexOf(col) === -1) return;
+        vistas.push(col);
+        var v = String(f[col] || '').trim(), vh;
+        if      (col === 'estado')      vh = bEstado(v);
+        else if (col === 'condicion')   vh = bCondicion(v);
+        else if (col === 'locales')     vh = bLocales(v);
+        else if (col === 'oportunidad') vh = bOpor(v);
+        else vh = v || '—';
+        filas += '<tr><td>' + (ETIQUETAS[col] || col) + '</td><td>' + vh + '</td></tr>';
+      });
+
+      campos.forEach(function(col) {
+        if (vistas.indexOf(col) !== -1 || SKIP.indexOf(col) !== -1) return;
+        var lbl = ETIQUETAS[col] || (col.charAt(0).toUpperCase() + col.slice(1).replace(/_/g,' '));
+        filas += '<tr><td>' + lbl + '</td><td>' + (String(f[col]||'').trim()||'—') + '</td></tr>';
+      });
+
+      return '<div class="tooltip-sunat"><h5>🏢 ' + nom + '</h5><table>' + filas + '</table></div>';
+    }
+
+    // ══════════════════════════════════════════
+    // CARGA SUNAT — por lotes
+    // ══════════════════════════════════════════
+    var ARCHIVOS_SUNAT   = ['sunat_decil2_1.csv'];
+    var sunatTotalGlobal = 0;
+    var archivoActual    = 0;
+
+    function crearMarcadorSunat(f, campos) {
+      var lat = convertirNumero(f['latitud']  || f['lat']  || f['latitude']);
+      var lng = convertirNumero(f['longitud'] || f['lng']  || f['lon'] || f['long'] || f['longitude']);
+      if (isNaN(lat) || isNaN(lng)) return false;
+      var ficha = fichaHTML(f, campos);
+      L.marker([lat, lng], { icon: iconoSunat, pane: 'paneSunat' })
+       .bindTooltip(ficha, { sticky: true, direction: 'top', opacity: 1, className: '' })
+       .addTo(grupoSunat);
+      return true;
+    }
+
+    function procesarLote(filas, campos, idx, totalArch, onFin) {
+      var LOTE = 200;
+      var fin  = Math.min(idx + LOTE, filas.length);
+      for (var i = idx; i < fin; i++) {
+        if (crearMarcadorSunat(filas[i], campos)) totalArch++;
+      }
+      idx = fin;
+      document.getElementById('progreso').textContent =
+        'Cargando SUNAT ' + archivoActual + '/' + ARCHIVOS_SUNAT.length + ' … ' +
+        Math.round(idx / filas.length * 100) + '%';
+      if (idx < filas.length) {
+        setTimeout(function() { procesarLote(filas, campos, idx, totalArch, onFin); }, 0);
+      } else {
+        onFin(totalArch);
+      }
+    }
+
+    function cargarArchivoSunat(idxArchivo) {
+      if (idxArchivo >= ARCHIVOS_SUNAT.length) {
+        var prog = document.getElementById('progreso');
+        prog.style.display = 'none'; prog.textContent = '';
+        grupoSunat.addTo(mapa);
+        controlCapas.addOverlay(grupoSunat, '🏢 SUNAT (' + sunatTotalGlobal.toLocaleString() + ')');
+        var c = document.getElementById('contadorSunat');
+        c.style.display = 'block';
+        c.textContent   = sunatTotalGlobal.toLocaleString() + ' empresas SUNAT cargadas';
+        document.getElementById('estado').textContent = 'Datos cargados correctamente';
+        return;
+      }
+      archivoActual = idxArchivo + 1;
+      var prog = document.getElementById('progreso');
+      prog.style.display = 'block';
+      prog.textContent   = 'Cargando SUNAT ' + archivoActual + '/' + ARCHIVOS_SUNAT.length + ' … 0%';
+      Papa.parse(ARCHIVOS_SUNAT[idxArchivo], {
+        download: true, header: true, skipEmptyLines: true, delimiter: "",
+        transformHeader: function(h) {
+          return String(h).replace(/\uFEFF/g, '').trim().toLowerCase();
+        },
+        complete: function(res) {
+          procesarLote(res.data, res.meta.fields || [], 0, 0, function(totalArch) {
+            sunatTotalGlobal += totalArch;
+            var c = document.getElementById('contadorSunat');
+            c.style.display = 'block';
+            c.textContent   = sunatTotalGlobal.toLocaleString() + ' empresas SUNAT cargadas';
+            cargarArchivoSunat(idxArchivo + 1);
+          });
+        },
+        error: function() {
+          console.warn('No se encontró: ' + ARCHIVOS_SUNAT[idxArchivo] + ' — saltando.');
+          cargarArchivoSunat(idxArchivo + 1);
+        }
+      });
+    }
+
+    // ══════════════════════════════════════════
+    // HEATMAP LEADS
+    // ══════════════════════════════════════════
+    cargarHeatmapCSV({
+      idCapa: 'leads', pane: 'paneLeads', visibleInicio: true,
+      archivo: 'leads.csv',
+      nombreCapa: '🔥 Leads - Mapa de calor rojo',
+      contadorId: 'contador', textoContador: 'leads cargados',
+      ajustarMapa: true, radius: 25, blur: 20,
+      intensidad: 0.75, minOpacity: 0.30, max: 1.0,
+      gradient: { 0.2:'#f97316', 0.5:'#ef4444', 0.8:'#b91c1c', 1.0:'#7f1d1d' }
+    });
+
+    // ══════════════════════════════════════════
+    // HEATMAP WIN
+    // ══════════════════════════════════════════
+    cargarHeatmapCSV({
+      idCapa: 'win', pane: 'paneWin', visibleInicio: true,
+      archivo: 'cobertura_win.csv',
+      nombreCapa: '✅ Cobertura WIN - Verde neón',
+      contadorId: 'contadorWin', textoContador: 'puntos WIN cargados',
+      ajustarMapa: false, radius: 34, blur: 10,
+      intensidad: 1.0, minOpacity: 0.75, max: 1.0,
+      gradient: { 0.1:'#eaff00', 0.3:'#b6ff00', 0.5:'#39ff14', 0.75:'#00ff66', 1.0:'#00e676' }
+    });
+
+    // ══════════════════════════════════════════
+    // CAPA SUNAT
+    // ══════════════════════════════════════════
+    cargarArchivoSunat(0);
+
+  </script>
+</body>
+</html>
