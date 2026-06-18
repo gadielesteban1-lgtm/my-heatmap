@@ -807,10 +807,10 @@
     // Ícono naranja pequeño para empresas Supabase
     var iconoSupanat = L.divIcon({
       className: '',
-      html: '<div style="width:10px;height:10px;background:#f59e0b;border:2px solid white;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>',
-      iconSize:    [10, 10],
-      iconAnchor:  [5, 5],
-      popupAnchor: [0, -8]
+      html: '<div style="width:18px;height:18px;background:#f59e0b;border:2.5px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-size:9px;color:white;font-weight:bold">🏢</div>',
+      iconSize:    [18, 18],
+      iconAnchor:  [9, 9],
+      popupAnchor: [0, -12]
     });
 
     // Construir ficha popup para empresa Supabase
@@ -834,7 +834,7 @@
 
       var zoom = mapa.getZoom();
       // Solo mostrar desde zoom 13 para no sobrecargar
-      if (zoom < 13) {
+      if (zoom < 11) {
         grupoSupanat.clearLayers();
         document.getElementById('contadorSupanat').textContent = '🔍 Acércate más para ver empresas';
         return;
@@ -855,7 +855,7 @@
           '&latitud=lte.' + latMax +
           '&longitud=gte.' + lngMin +
           '&longitud=lte.' + lngMax +
-          '&limit=800' +
+          '&limit=1000' +
           '&select=ruc,razon_social,estado,condicion,distrito,tipo_empresa,q_trabajadores,locales,latitud,longitud';
 
         var resp = await fetch(url, {
@@ -893,7 +893,7 @@
     // Recargar al mover/zoom con debounce
     function programarCargaSupanat() {
       clearTimeout(supanatTimeout);
-      sunanatTimeout = setTimeout(cargarEmpresasSupabase, 600);
+      supanatTimeout = setTimeout(cargarEmpresasSupabase, 600);
     }
 
     mapa.on('moveend zoomend', programarCargaSupanat);
