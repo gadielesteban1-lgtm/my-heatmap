@@ -721,8 +721,8 @@
       archivo: 'leads.csv',
       nombreCapa: '🔥 Leads - Mapa de calor rojo',
       contadorId: 'contador', textoContador: 'leads cargados',
-      ajustarMapa: true, radius: 25, blur: 20,
-      intensidad: 0.75, minOpacity: 0.30, max: 1.0,
+      ajustarMapa: true, radius: 20, blur: 15,
+      intensidad: 0.75, minOpacity: 0.25, max: 1.0,
       gradient: { 0.2:'#f97316', 0.5:'#ef4444', 0.8:'#b91c1c', 1.0:'#7f1d1d' }
     });
 
@@ -734,9 +734,54 @@
       archivo: 'cobertura_win.csv',
       nombreCapa: '✅ Cobertura WIN - Verde neón',
       contadorId: 'contadorWin', textoContador: 'puntos WIN cargados',
-      ajustarMapa: false, radius: 34, blur: 10,
-      intensidad: 1.0, minOpacity: 0.75, max: 1.0,
+      ajustarMapa: false, radius: 28, blur: 8,
+      intensidad: 1.0, minOpacity: 0.65, max: 1.0,
       gradient: { 0.1:'#eaff00', 0.3:'#b6ff00', 0.5:'#39ff14', 0.75:'#00ff66', 1.0:'#00e676' }
+    });
+
+    // ══════════════════════════════════════════
+    // OPTIMIZACIÓN: ajustar radio según zoom
+    // Menos detalle al alejar = más fluido
+    // ══════════════════════════════════════════
+    mapa.on('zoomend', function() {
+      var z = mapa.getZoom();
+      // Radio dinámico: zoom bajo = radio grande (mancha), zoom alto = radio pequeño (preciso)
+      var rLeads = z < 11 ? 12 : z < 13 ? 18 : z < 15 ? 22 : 28;
+      var rWin   = z < 11 ? 16 : z < 13 ? 22 : z < 15 ? 28 : 35;
+      var blur   = z < 11 ? 8  : z < 13 ? 12 : 15;
+
+      if (capasHeatmap.leads) {
+        capasHeatmap.leads.setOptions({ radius: rLeads, blur: blur });
+      }
+      if (capasHeatmap.win) {
+        capasHeatmap.win.setOptions({ radius: rWin, blur: blur });
+      }
+    });
+
+    // ══════════════════════════════════════════
+    // OPTIMIZACIÓN: pausar render al arrastrar
+    // Reanuda solo al soltar = mapa más fluido
+    // ══════════════════════════════════════════
+    mapa.on('movestart', function() {
+      if (capasHeatmap.leads && mapa.hasLayer(capasHeatmap.leads)) {
+        mapa.removeLayer(capasHeatmap.leads);
+        mapa._pausedLeads = true;
+      }
+      if (capasHeatmap.win && mapa.hasLayer(capasHeatmap.win)) {
+        mapa.removeLayer(capasHeatmap.win);
+        mapa._pausedWin = true;
+      }
+    });
+
+    mapa.on('moveend', function() {
+      if (mapa._pausedLeads && capasHeatmap.leads) {
+        capasHeatmap.leads.addTo(mapa);
+        mapa._pausedLeads = false;
+      }
+      if (mapa._pausedWin && capasHeatmap.win) {
+        capasHeatmap.win.addTo(mapa);
+        mapa._pausedWin = false;
+      }
     });
 
     // ══════════════════════════════════════════
