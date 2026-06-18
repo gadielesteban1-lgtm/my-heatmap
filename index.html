@@ -45,6 +45,7 @@
     #btnLeads.activo { background:#dc2626; }
     #btnWin.activo   { background:#00e676; color:#002b12; box-shadow:0 0 10px rgba(0,255,102,0.95); }
     #btnSunat.activo { background:#1d4ed8; }
+    #btnSupanat.activo { background:#92400e; color:white; }
 
     .leyenda { margin-top:8px; font-size:12px; color:#333; line-height:1.9; }
 
@@ -237,10 +238,12 @@
         🏢 SUNAT
       </button>
     </div>
+      <button id="btnSupanat" class="btn-capa" onclick="toggleSupanat()" style="background:#e5e7eb;color:#374151;">🗄️ +548K</button>
 
     <div id="contador"></div>
     <div id="contadorWin"></div>
     <div id="contadorSunat"></div>
+    <div id="contadorSupanat" style="font-size:11px;color:#92400e;margin-top:3px;font-weight:bold;"></div>
     <div id="estado">Cargando datos...</div>
     <div id="progreso"></div>
 
@@ -785,9 +788,132 @@
     });
 
     // ══════════════════════════════════════════
-    // CAPA SUNAT
+    // CAPA SUNAT (CSV local — decil pequeño)
     // ══════════════════════════════════════════
     cargarArchivoSunat(0);
+
+    // ══════════════════════════════════════════
+    // SUPABASE — 548K empresas desde la nube
+    // Solo carga los puntos visibles en pantalla
+    // ══════════════════════════════════════════
+    var SUPABASE_URL = 'https://precvwhklkosdhwvhgyu.supabase.co';
+    var SUPABASE_KEY = 'sb_publishable_AU2wfpGo7765iJUNypvsXg_qHE5b_X4';
+
+    var grupoSupanat     = L.layerGroup();
+    var supanatActivo    = false;
+    var supanatCargando  = false;
+    var supanatTimeout   = null;
+
+    // Ícono naranja pequeño para empresas Supabase
+    var iconoSupanat = L.divIcon({
+      className: '',
+      html: '<div style="width:10px;height:10px;background:#f59e0b;border:2px solid white;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>',
+      iconSize:    [10, 10],
+      iconAnchor:  [5, 5],
+      popupAnchor: [0, -8]
+    });
+
+    // Construir ficha popup para empresa Supabase
+    function fichaSupanat(e) {
+      return '<div style="font-size:12px;min-width:180px">' +
+        '<b style="color:#1e3a8a">🏢 ' + (e.razon_social || '—') + '</b><br>' +
+        '<hr style="margin:4px 0;border-color:#bfdbfe">' +
+        '<b>🪪 RUC:</b> ' + (e.ruc || '—') + '<br>' +
+        '<b>📊 Estado:</b> ' + (e.estado || '—') + '<br>' +
+        '<b>📌 Condición:</b> ' + (e['condición de domicilio'] || e.condicion || '—') + '<br>' +
+        '<b>🏗️ Tipo:</b> ' + (e.tipo_empresa || '—') + '<br>' +
+        '<b>📍 Distrito:</b> ' + (e.distrito || '—') + '<br>' +
+        '<b>👥 Trabajadores:</b> ' + (e.q_trabajadores || '—') + '<br>' +
+        '<b>🏬 Locales:</b> ' + (e.locales || '—') +
+        '</div>';
+    }
+
+    // Consultar Supabase con el bbox visible actual
+    async function cargarEmpresasSupabase() {
+      if (!supanatActivo || supanatCargando) return;
+
+      var zoom = mapa.getZoom();
+      // Solo mostrar desde zoom 13 para no sobrecargar
+      if (zoom < 13) {
+        grupoSupanat.clearLayers();
+        document.getElementById('contadorSupanat').textContent = '🔍 Acércate más para ver empresas';
+        return;
+      }
+
+      var bounds = mapa.getBounds();
+      var latMin = bounds.getSouth().toFixed(6);
+      var latMax = bounds.getNorth().toFixed(6);
+      var lngMin = bounds.getWest().toFixed(6);
+      var lngMax = bounds.getEast().toFixed(6);
+
+      supanatCargando = true;
+      document.getElementById('contadorSupanat').textContent = '⏳ Cargando empresas...';
+
+      try {
+        var url = SUPABASE_URL + '/rest/v1/empresas_sunat' +
+          '?latitud=gte.' + latMin +
+          '&latitud=lte.' + latMax +
+          '&longitud=gte.' + lngMin +
+          '&longitud=lte.' + lngMax +
+          '&limit=800' +
+          '&select=ruc,razon_social,estado,condicion,distrito,tipo_empresa,q_trabajadores,locales,latitud,longitud';
+
+        var resp = await fetch(url, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY
+          }
+        });
+
+        var data = await resp.json();
+        grupoSupanat.clearLayers();
+
+        if (Array.isArray(data)) {
+          data.forEach(function(e) {
+            if (e.latitud && e.longitud) {
+              L.marker([e.latitud, e.longitud], {
+                icon: iconoSupanat,
+                pane: 'paneSunat'
+              })
+              .bindPopup(fichaSupanat(e), { maxWidth: 260 })
+              .addTo(grupoSupanat);
+            }
+          });
+          document.getElementById('contadorSupanat').textContent =
+            '🏢 ' + data.length.toLocaleString() + ' empresas visibles';
+        }
+      } catch(err) {
+        document.getElementById('contadorSupanat').textContent = '⚠️ Error al cargar empresas';
+        console.error('Supabase error:', err);
+      }
+
+      supanatCargando = false;
+    }
+
+    // Recargar al mover/zoom con debounce
+    function programarCargaSupanat() {
+      clearTimeout(supanatTimeout);
+      sunanatTimeout = setTimeout(cargarEmpresasSupabase, 600);
+    }
+
+    mapa.on('moveend zoomend', programarCargaSupanat);
+
+    // Toggle capa Supabase
+    function toggleSupanat() {
+      var btn = document.getElementById('btnSupanat');
+      supanatActivo = !supanatActivo;
+
+      if (supanatActivo) {
+        grupoSupanat.addTo(mapa);
+        btn.classList.add('activo');
+        cargarEmpresasSupabase();
+      } else {
+        grupoSupanat.clearLayers();
+        mapa.removeLayer(grupoSupanat);
+        btn.classList.remove('activo');
+        document.getElementById('contadorSupanat').textContent = '';
+      }
+    }
 
   </script>
 </body>
